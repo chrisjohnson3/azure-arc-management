@@ -1,40 +1,34 @@
-// Combined query for Arc SQL Server and Arc Windows Server licensing
-// SQL Server Instances
+// Query Arc SQL Server and Windows Server licensing
 resources
 | where type =~ 'Microsoft.AzureArcData/SqlServerInstances'
 | extend licenseType = properties.licenseType
 | extend version = properties.version
 | extend edition = properties.edition
-| extend ResourceType = "SQL Server"
 | project 
-    ResourceType,
+    ResourceType = "SQL Server",
     ServerName = name,
     ResourceGroup = resourceGroup,
     Location = location,
-    LicenseType = licenseType,
-    Edition = edition,
-    Version = version,
+    SQLLicenseType = licenseType,
+    SQLEdition = edition,
+    SQLVersion = version,
     SubscriptionId = subscriptionId
 | union (
-    // Windows Server Licensing
     resources
     | where type =~ 'Microsoft.HybridCompute/machines'
-    | extend licenseType = properties.licenseProfile.licenseType
+    | extend azureBenefitsEnabled = properties.licenseProfile.softwareAssurance.softwareAssuranceCustomer
     | extend licenseStatus = properties.licenseProfile.licenseStatus
-    | extend esuProfile = properties.licenseProfile.esuProfile.licenseAssignmentState
     | extend osName = properties.osName
     | extend osVersion = properties.osVersion
-    | extend osSku = properties.osSku
     | extend osEdition = properties.osEdition
-    | extend ResourceType = "Windows Server"
+    | extend osSku = properties.osSku
     | project 
-        ResourceType,
+        ResourceType = "Windows Server",
         ServerName = name,
         ResourceGroup = resourceGroup,
         Location = location,
-        LicenseType = licenseType,
+        AzureBenefitsEnabled = azureBenefitsEnabled,
         LicenseStatus = licenseStatus,
-        ESUStatus = esuProfile,
         OSName = osName,
         OSVersion = osVersion,
         OSEdition = osEdition,
