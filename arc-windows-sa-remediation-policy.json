@@ -1,0 +1,90 @@
+{
+  "displayName": "Arc Windows - SA Auto-remediation",
+  "policyType": "Custom",
+  "mode": "Indexed",
+  "description": "This policy automatically enables Azure benefits (Software Assurance attestation) for Arc-enabled Windows Servers. New servers are auto-configured, and existing servers can be fixed via remediation tasks.",
+  "metadata": {
+    "category": "Azure Arc",
+    "version": "1.0.0"
+  },
+  "parameters": {
+    "effect": {
+      "type": "String",
+      "metadata": {
+        "displayName": "Effect",
+        "description": "DeployIfNotExists will automatically enable Azure benefits."
+      },
+      "allowedValues": [
+        "DeployIfNotExists",
+        "Disabled"
+      ],
+      "defaultValue": "DeployIfNotExists"
+    }
+  },
+  "policyRule": {
+    "if": {
+      "allOf": [
+        {
+          "field": "type",
+          "equals": "Microsoft.HybridCompute/machines"
+        },
+        {
+          "field": "Microsoft.HybridCompute/machines/osName",
+          "contains": "Windows"
+        }
+      ]
+    },
+    "then": {
+      "effect": "[parameters('effect')]",
+      "details": {
+        "type": "Microsoft.HybridCompute/machines/licenseProfiles",
+        "name": "default",
+        "roleDefinitionIds": [
+          "/providers/microsoft.authorization/roleDefinitions/cd570a14-e51a-42ad-bac8-bafd67325302"
+        ],
+        "existenceCondition": {
+          "field": "Microsoft.HybridCompute/machines/licenseProfiles/softwareAssurance.softwareAssuranceCustomer",
+          "equals": "true"
+        },
+        "deployment": {
+          "properties": {
+            "mode": "incremental",
+            "template": {
+              "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+              "contentVersion": "1.0.0.0",
+              "parameters": {
+                "machineName": {
+                  "type": "string"
+                },
+                "location": {
+                  "type": "string"
+                }
+              },
+              "resources": [
+                {
+                  "type": "Microsoft.HybridCompute/machines/licenseProfiles",
+                  "apiVersion": "2023-10-03-preview",
+                  "name": "[concat(parameters('machineName'), '/default')]",
+                  "location": "[parameters('location')]",
+                  "properties": {
+                    "softwareAssurance": {
+                      "softwareAssuranceCustomer": true
+                    }
+                  }
+                }
+              ]
+            },
+            "parameters": {
+              "machineName": {
+                "value": "[field('name')]"
+              },
+              "location": {
+                "value": "[field('location')]"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
