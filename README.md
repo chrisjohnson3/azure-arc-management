@@ -134,7 +134,6 @@ KQL query for Resource Graph Explorer to view licensing status across Arc resour
 
 ## Notes
 
-- All scripts preserve existing extension settings when updating
-- Scripts check for current state and skip unchanged machines
-- Proper error handling with detailed failure messages
-- Summary output shows success, skipped, and failed counts
+- Scripts skip machines already set to target state
+- Preserves existing settings when updating
+- Shows summary of success, skipped, and failed counts
