@@ -1,4 +1,4 @@
-// Query Arc SQL Server and Windows Server licensing
+// Arc SQL and Windows Server licensing
 resources
 | where type =~ 'Microsoft.AzureArcData/SqlServerInstances'
 | extend licenseType = properties.licenseType

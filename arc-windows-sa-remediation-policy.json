@@ -1,8 +1,8 @@
 {
-  "displayName": "Arc Windows - SA Auto-remediation",
+  "displayName": "Arc Windows - Enable SA benefits",
   "policyType": "Custom",
   "mode": "Indexed",
-  "description": "This policy automatically enables Azure benefits (Software Assurance attestation) for Arc-enabled Windows Servers. New servers are auto-configured, and existing servers can be fixed via remediation tasks.",
+  "description": "Enables Azure benefits (Software Assurance) for Arc-enabled Windows servers",
   "metadata": {
     "category": "Azure Arc",
     "version": "1.0.0"
@@ -12,7 +12,7 @@
       "type": "String",
       "metadata": {
         "displayName": "Effect",
-        "description": "DeployIfNotExists will automatically enable Azure benefits."
+        "description": "Enable or disable the policy"
       },
       "allowedValues": [
         "DeployIfNotExists",
