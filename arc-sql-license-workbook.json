@@ -1,0 +1,228 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "## Arc SQL Server License Compliance\r\n\r\nMonitors SQL Server license compliance across Arc-enabled servers. Displays which instances are using the correct license type and which require remediation."
+      },
+      "name": "text - title"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "version": "KqlParameterItem/1.0",
+            "name": "Subscriptions",
+            "type": 6,
+            "isRequired": true,
+            "multiSelect": true,
+            "quote": "'",
+            "delimiter": ",",
+            "typeSettings": {
+              "additionalResourceOptions": [
+                "value::all"
+              ],
+              "includeAll": true,
+              "showDefault": false
+            },
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "defaultValue": "value::all"
+          },
+          {
+            "id": "b859a110-62a8-4c37-a889-e02c829a5f6d",
+            "version": "KqlParameterItem/1.0",
+            "name": "TargetLicenseType",
+            "label": "Target License Type",
+            "type": 2,
+            "isRequired": true,
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "showDefault": false
+            },
+            "jsonData": "[\"Paid\", \"PAYG\", \"LicenseOnly\"]",
+            "value": "Paid"
+          },
+          {
+            "id": "c3d9f2a1-8e7b-4f3c-9a5d-1b2e4f6c8d0a",
+            "version": "KqlParameterItem/1.0",
+            "name": "ShowOffline",
+            "label": "Show Offline Instances",
+            "type": 2,
+            "isRequired": true,
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "showDefault": false
+            },
+            "jsonData": "[\"Yes\", \"No\"]",
+            "value": "Yes"
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "resources\r\n| where type == \"microsoft.azurearcdata/sqlserverinstances\"\r\n| extend licenseType = tostring(properties.licenseType)\r\n| extend version = tostring(properties.version)\r\n| extend edition = tostring(properties.edition)\r\n| extend sqlStatus = tostring(properties.status)\r\n| extend instanceName = tostring(properties.instanceName)\r\n| extend containerResourceId = tostring(properties.containerResourceId)\r\n| extend machineName = tostring(split(containerResourceId, '/')[8])\r\n| where instanceName !contains \"SSIS\" \r\n    and instanceName !contains \"SSRS\" \r\n    and instanceName !contains \"SSAS\"\r\n    and instanceName !contains \"PBIRS\"\r\n| join kind=leftouter (\r\n    resources\r\n    | where type == \"microsoft.hybridcompute/machines\"\r\n    | extend machineStatus = tostring(properties.status)\r\n    | extend machineName = name\r\n    | project machineName, machineStatus, machineId = id\r\n) on machineName\r\n| summarize \r\n    licenseType = any(licenseType),\r\n    version = any(version),\r\n    edition = any(edition),\r\n    sqlStatus = any(sqlStatus),\r\n    machineStatus = any(machineStatus),\r\n    resourceGroup = any(resourceGroup),\r\n    location = any(location),\r\n    instanceName = any(instanceName)\r\n    by machineName\r\n| where isnotempty(machineStatus)\r\n| extend compliant = (licenseType == \"{TargetLicenseType}\")\r\n| extend isOnline = (machineStatus == \"Connected\" and sqlStatus == \"Connected\")\r\n| where \"{ShowOffline}\" == \"Yes\" or isOnline == true\r\n| summarize \r\n    TotalInstances = count(),\r\n    OnlineInstances = countif(isOnline == true),\r\n    OfflineInstances = countif(isOnline == false),\r\n    CompliantOnline = countif(isOnline == true and compliant == true),\r\n    NonCompliantOnline = countif(isOnline == true and compliant == false)",
+        "size": 4,
+        "title": "Summary",
+        "queryType": 1,
+        "resourceType": "microsoft.resourcegraph/resources",
+        "crossComponentResources": [
+          "{Subscriptions}"
+        ],
+        "visualization": "tiles",
+        "tileSettings": {
+          "titleContent": {
+            "columnMatch": "TotalInstances",
+            "formatter": 1
+          },
+          "leftContent": {
+            "columnMatch": "TotalInstances",
+            "formatter": 12,
+            "formatOptions": {
+              "palette": "blue"
+            }
+          },
+          "secondaryContent": {
+            "columnMatch": "TotalInstances",
+            "formatter": 1
+          },
+          "showBorder": true
+        }
+      },
+      "name": "query - summary tiles"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "resources\r\n| where type == \"microsoft.azurearcdata/sqlserverinstances\"\r\n| extend licenseType = tostring(properties.licenseType)\r\n| extend version = tostring(properties.version)\r\n| extend edition = tostring(properties.edition)\r\n| extend sqlStatus = tostring(properties.status)\r\n| extend instanceName = tostring(properties.instanceName)\r\n| extend containerResourceId = tostring(properties.containerResourceId)\r\n| extend machineName = tostring(split(containerResourceId, '/')[8])\r\n| where instanceName !contains \"SSIS\" \r\n    and instanceName !contains \"SSRS\" \r\n    and instanceName !contains \"SSAS\"\r\n    and instanceName !contains \"PBIRS\"\r\n| join kind=leftouter (\r\n    resources\r\n    | where type == \"microsoft.hybridcompute/machines\"\r\n    | extend machineStatus = tostring(properties.status)\r\n    | extend machineName = name\r\n    | project machineName, machineStatus, machineId = id\r\n) on machineName\r\n| summarize \r\n    licenseType = any(licenseType),\r\n    version = any(version),\r\n    edition = any(edition),\r\n    sqlStatus = any(sqlStatus),\r\n    machineStatus = any(machineStatus),\r\n    resourceGroup = any(resourceGroup),\r\n    location = any(location),\r\n    instanceName = any(instanceName)\r\n    by machineName\r\n| where isnotempty(machineStatus)\r\n| extend compliant = (licenseType == \"{TargetLicenseType}\")\r\n| extend isOnline = (machineStatus == \"Connected\" and sqlStatus == \"Connected\")\r\n| where \"{ShowOffline}\" == \"Yes\" or isOnline == true\r\n| project machineName,\r\n          resourceGroup,\r\n          \r\n          licenseType,\r\n          version,\r\n          edition,\r\n          sqlStatus,\r\n          machineStatus,\r\n          isOnline,\r\n          compliant,\r\n          location\r\n| order by isOnline desc, compliant asc, machineName asc",
+        "size": 0,
+        "title": "SQL Server Instances",
+        "queryType": 1,
+        "resourceType": "microsoft.resourcegraph/resources",
+        "crossComponentResources": [
+          "{Subscriptions}"
+        ],
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "compliant",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": "==",
+                    "thresholdValue": "1",
+                    "representation": "success",
+                    "text": "Compliant"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "0",
+                    "representation": "warning",
+                    "text": "Non-Compliant"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "unknown",
+                    "text": "Unknown"
+                  }
+                ]
+              }
+            },
+            {
+              "columnMatch": "isOnline",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": "==",
+                    "thresholdValue": "1",
+                    "representation": "Available",
+                    "text": "Online"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "0",
+                    "representation": "disabled",
+                    "text": "Offline"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "unknown",
+                    "text": "Unknown"
+                  }
+                ]
+              }
+            }
+          ],
+          "rowLimit": 1000,
+          "filter": true,
+          "labelSettings": [
+            {
+              "columnId": "machineName",
+              "label": "Machine Name"
+            },
+            {
+              "columnId": "resourceGroup",
+              "label": "Resource Group"
+            },
+            {
+              "columnId": "licenseType",
+              "label": "License Type"
+            },
+            {
+              "columnId": "version",
+              "label": "SQL Version"
+            },
+            {
+              "columnId": "edition",
+              "label": "SQL Edition"
+            },
+            {
+              "columnId": "sqlStatus",
+              "label": "SQL Status"
+            },
+            {
+              "columnId": "machineStatus",
+              "label": "Machine Status"
+            },
+            {
+              "columnId": "isOnline",
+              "label": "Online"
+            },
+            {
+              "columnId": "compliant",
+              "label": "Compliance"
+            },
+            {
+              "columnId": "location",
+              "label": "Location"
+            }
+          ]
+        }
+      },
+      "name": "query - instances table"
+    }
+  ],
+  "fallbackResourceIds": [
+    "azure monitor"
+  ],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
