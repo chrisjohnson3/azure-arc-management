@@ -177,6 +177,23 @@ Azure Policy definition for automatically enabling Software Assurance benefits o
 
 Resource Graph query for viewing licensing status across Arc resources.
 
+### arc-windows-esu-cost-estimate.kql
+
+Resource Graph query that returns a per-server ESU cost estimate for Arc-enabled Windows servers.
+
+Identifies servers running ESU-eligible OS versions (Windows Server 2012, 2012 R2, and 2016), applies the 8-core minimum licensing rule, and calculates monthly and yearly ESU costs based on current Microsoft ESU pricing.
+
+**ESU Pricing (per core/month):**
+- Windows Server 2012 / 2012 R2 Standard: $4.74
+- Windows Server 2012 / 2012 R2 Datacenter: $27.50
+- Windows Server 2016 Standard: $4.74 *(ESU begins January 2027)*
+- Windows Server 2016 Datacenter: $27.50 *(ESU begins January 2027)*
+
+**Notes:**
+- Azure VMs are excluded — ESUs are provided at no cost for Azure-hosted workloads
+- Pricing is hardcoded based on current Microsoft ESU rates — update if rates change
+- The 8-core minimum per server is applied per Microsoft licensing requirements
+- Results are sorted by yearly ESU cost descending
 ## Notes
 
 - Scripts skip servers already configured with the target setting
