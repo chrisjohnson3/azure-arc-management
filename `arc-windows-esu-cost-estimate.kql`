@@ -1,0 +1,45 @@
+// Arc Windows Server ESU Cost Estimate
+// Returns per-server ESU cost based on OS version, edition, and core count
+// Pricing based on Microsoft ESU rates (per core/month, 8-core minimum):
+//   Windows Server 2012/2012 R2 Standard:    $4.74/core/month
+//   Windows Server 2012/2012 R2 Datacenter:  $27.50/core/month
+//   Windows Server 2016 Standard:            $4.74/core/month (ESU starts Jan 2027)
+//   Windows Server 2016 Datacenter:          $27.50/core/month (ESU starts Jan 2027)
+resources
+| where type =~ 'Microsoft.HybridCompute/machines'
+| extend osSku = tostring(properties.osSku)
+| extend logicalCores = tolong(properties.detectedProperties.logicalCoreCount)
+| extend osType = tostring(properties.osType)
+| where osType =~ 'windows'
+| extend osEdition = case(
+    osSku contains 'Datacenter', 'Datacenter',
+    osSku contains 'Standard', 'Standard',
+    'Unknown'
+)
+| extend osVersion = case(
+    osSku contains '2012 R2', 'Windows Server 2012 R2',
+    osSku contains '2012',    'Windows Server 2012',
+    osSku contains '2016',    'Windows Server 2016',
+    osSku contains '2019',    'Windows Server 2019',
+    osSku contains '2022',    'Windows Server 2022',
+    'Unknown'
+)
+| where osVersion in ('Windows Server 2012 R2', 'Windows Server 2012', 'Windows Server 2016')
+| extend esuCores = iff(logicalCores < 8, 8, logicalCores)
+| extend esuCostMonthly = case(
+    osEdition == 'Datacenter', 27.50,
+    osEdition == 'Standard',    4.74,
+    0.0
+)
+| extend esuCostYearly = esuCores * esuCostMonthly * 12
+| sort by esuCostYearly desc
+| project
+    ServerName = name,
+    OSVersion = osVersion,
+    OSEdition = osEdition,
+    PhysicalCores = logicalCores,
+    ESUCores = esuCores,
+    ESUCostMonthly = strcat('$', tostring(round(esuCores * esuCostMonthly, 2))),
+    ESUCostYearly = strcat('$', tostring(round(esuCostYearly, 2))),
+    ResourceGroup = resourceGroup,
+    SubscriptionId = subscriptionId
