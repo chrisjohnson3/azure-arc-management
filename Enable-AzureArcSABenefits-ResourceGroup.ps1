@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Enable Azure benefits for all Arc servers in a resource group
@@ -15,6 +16,7 @@
     .\Enable-AzureArcSABenefits-ResourceGroup.ps1 -ResourceGroupName "my-rg" -ExcludeMachines "dev-server","test-vm"
 #>
 
+[CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='High')]
 param(
     [Parameter(Mandatory=$true)]
     [string]$ResourceGroupName,
@@ -24,6 +26,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot\ArcManagement.Helpers.ps1"
 
 Write-Host "`nEnabling Azure benefits for Arc servers in resource group..." -ForegroundColor Cyan
 
@@ -34,10 +37,11 @@ if (-not $context) {
 }
 
 Write-Host "Resource Group: $ResourceGroupName" -ForegroundColor Gray
+Write-Host "Subscription: $($context.Subscription.Name) ($($context.Subscription.Id))" -ForegroundColor Gray
 Write-Host "Looking for Arc Windows servers..." -ForegroundColor Gray
 
 # Get all Arc machines in resource group
-$allServers = Get-AzResource -ResourceGroupName $ResourceGroupName -ResourceType 'Microsoft.HybridCompute/machines' -ErrorAction SilentlyContinue
+$allServers = @(Get-AzResource -ResourceGroupName $ResourceGroupName -ResourceType 'Microsoft.HybridCompute/machines' -ErrorAction Stop)
 
 if (-not $allServers -or $allServers.Count -eq 0) {
     Write-Host "No Arc machines found`n" -ForegroundColor Red
@@ -45,10 +49,10 @@ if (-not $allServers -or $allServers.Count -eq 0) {
 }
 
 # Filter to Windows machines
-$windowsServers = $allServers | Where-Object {
-    $detail = Get-AzResource -ResourceId $_.ResourceId
+$windowsServers = @($allServers | Where-Object {
+    $detail = Get-AzResource -ResourceId $_.ResourceId -ExpandProperties -ErrorAction Stop
     $detail.Properties.osName -like "*Windows*"
-}
+})
 
 if ($windowsServers.Count -eq 0) {
     Write-Host "No Windows servers found`n" -ForegroundColor Red
@@ -58,7 +62,7 @@ if ($windowsServers.Count -eq 0) {
 # Apply exclusions
 if ($ExcludeMachines -and $ExcludeMachines.Count -gt 0) {
     Write-Host "Excluding machines: $($ExcludeMachines -join ', ')" -ForegroundColor Yellow
-    $windowsServers = $windowsServers | Where-Object { $_.Name -notin $ExcludeMachines }
+    $windowsServers = @($windowsServers | Where-Object { $_.Name -notin $ExcludeMachines })
     
     if ($windowsServers.Count -eq 0) {
         Write-Host "No machines left after exclusions`n" -ForegroundColor Red
@@ -68,14 +72,10 @@ if ($ExcludeMachines -and $ExcludeMachines.Count -gt 0) {
 
 Write-Host "Found $($windowsServers.Count) server(s)`n" -ForegroundColor Gray
 
-# Safety confirmation
-if ($windowsServers.Count -gt 1) {
-    Write-Host "This will modify $($windowsServers.Count) machine(s). Continue?" -ForegroundColor Yellow
-    $confirm = Read-Host "Enter 'yes' to proceed"
-    if ($confirm -ne 'yes') {
-        Write-Host "Cancelled.`n" -ForegroundColor Yellow
-        exit 0
-    }
+$windowsServers | Select-Object Name, ResourceGroupName | Format-Table -AutoSize | Out-Host
+Write-Warning "Only proceed for Windows Server machines with confirmed active Software Assurance or qualifying subscription coverage. This records your licensing declaration; it does not verify entitlement."
+if (-not $PSCmdlet.ShouldProcess("$($windowsServers.Count) Windows machines in $ResourceGroupName, subscription $($context.Subscription.Id)", "Attest licensing eligibility and enable Azure benefits")) {
+    exit 0
 }
 
 Write-Host ""
@@ -92,9 +92,8 @@ foreach ($server in $windowsServers) {
     
     Write-Host "[$counter/$($windowsServers.Count)] $serverName (rg: $rg)" -ForegroundColor Cyan
     
-    # Check current status
     try {
-        $existingProfile = Get-AzResource -ResourceId $profilePath -ApiVersion $api -ErrorAction SilentlyContinue
+        $existingProfile = Get-ArcLicenseProfile -ResourceId $profilePath -ApiVersion $api
         $isEnabled = $existingProfile.Properties.softwareAssurance.softwareAssuranceCustomer
         
         if ($isEnabled -eq $true) {
@@ -107,20 +106,16 @@ foreach ($server in $windowsServers) {
             }
             continue
         }
-    } catch {
-        # Not configured yet
-    }
-    
-    Write-Host "  Enabling..." -ForegroundColor Yellow
-    
-    $licenseConfig = @{
-        softwareAssurance = @{
-            softwareAssuranceCustomer = $true
+        Write-Host "  Enabling..." -ForegroundColor Yellow
+
+        $licenseConfig = @{
+            softwareAssurance = @{
+                softwareAssuranceCustomer = $true
+            }
         }
-    }
-    
-    try {
-        $result = New-AzResource -ResourceId $profilePath -Properties $licenseConfig -Location $server.Location -ApiVersion $api -Force
+
+        New-AzResource -ResourceId $profilePath -Properties $licenseConfig -Location $server.Location -ApiVersion $api -Force -ErrorAction Stop | Out-Null
+        Assert-ArcBenefitsEnabled -ResourceId $profilePath -ApiVersion $api
         
         Write-Host "  Done`n" -ForegroundColor Green
         $results += [PSCustomObject]@{
@@ -155,6 +150,8 @@ if ($alreadyEnabled -gt 0) {
 }
 if ($failed -gt 0) {
     Write-Host "Failed: $failed" -ForegroundColor Red
+    exit 1
 }
 
 Write-Host ""
+exit 0

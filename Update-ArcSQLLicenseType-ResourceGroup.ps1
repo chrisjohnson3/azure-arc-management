@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Update SQL Server license type for Arc servers in a resource group
@@ -11,6 +12,7 @@
 .EXAMPLE
     .\Update-ArcSQLLicenseType-ResourceGroup.ps1 -ResourceGroupName "my-rg" -LicenseType "Paid"
 #>
+[CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='High')]
 param(
     [Parameter(Mandatory=$true)]
     [string]$ResourceGroupName,
@@ -21,14 +23,22 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot\ArcManagement.Helpers.ps1"
+
+$context = Get-AzContext
+if (-not $context) {
+    Write-Host "Not connected to Azure. Run 'Connect-AzAccount' first." -ForegroundColor Red
+    exit 1
+}
 
 Write-Host "`nUpdating SQL Server license type in resource group" -ForegroundColor Cyan
 Write-Host "Resource Group: $ResourceGroupName" -ForegroundColor Gray
+Write-Host "Subscription: $($context.Subscription.Name) ($($context.Subscription.Id))" -ForegroundColor Gray
 Write-Host "Target: $LicenseType`n" -ForegroundColor Gray
 
 # Get all Arc machines in the resource group
 Write-Host "Finding Arc-enabled machines..." -ForegroundColor Yellow
-$machines = Get-AzConnectedMachine -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
+$machines = @(Get-AzConnectedMachine -ResourceGroupName $ResourceGroupName -ErrorAction Stop)
 
 if (-not $machines -or $machines.Count -eq 0) {
     Write-Host "No Arc machines found`n" -ForegroundColor Red
@@ -42,7 +52,7 @@ Write-Host "Checking for SQL Server extensions..." -ForegroundColor Yellow
 $sqlMachines = @()
 
 foreach ($machine in $machines) {
-    $extensions = Get-AzConnectedMachineExtension -ResourceGroupName $ResourceGroupName -MachineName $machine.Name -ErrorAction SilentlyContinue
+    $extensions = Get-AzConnectedMachineExtension -ResourceGroupName $ResourceGroupName -MachineName $machine.Name -ErrorAction Stop
     $sqlExt = $extensions | Where-Object { $_.Name -eq "WindowsAgent.SqlServer" }
     
     if ($sqlExt) {
@@ -56,6 +66,11 @@ if ($sqlMachines.Count -eq 0) {
     exit 1
 }
 
+$sqlMachines | Select-Object Name, ResourceGroupName | Format-Table -AutoSize | Out-Host
+Write-Warning "Confirm the selected license type matches your SQL Server entitlement. PAYG can start Azure billing; Paid declares active SA/subscription coverage. Changing license type does not verify entitlement."
+if (-not $PSCmdlet.ShouldProcess("$($sqlMachines.Count) Windows SQL machines in $ResourceGroupName, subscription $($context.Subscription.Id)", "Set SQL Server license type to $LicenseType")) {
+    exit 0
+}
 Write-Host ""
 
 # Process each machine
@@ -68,7 +83,7 @@ foreach ($machine in $sqlMachines) {
     
     try {
         # Get current extension settings
-        $extension = Get-AzConnectedMachineExtension -ResourceGroupName $ResourceGroupName -MachineName $machine.Name -Name "WindowsAgent.SqlServer"
+        $extension = Get-AzConnectedMachineExtension -ResourceGroupName $ResourceGroupName -MachineName $machine.Name -Name "WindowsAgent.SqlServer" -ErrorAction Stop
         
         $currentSettings = @{}
         if ($extension.Setting) {
@@ -91,7 +106,8 @@ foreach ($machine in $sqlMachines) {
         }
         $currentSettings["LicenseType"] = $LicenseType
         
-        Update-AzConnectedMachineExtension -ResourceGroupName $ResourceGroupName -MachineName $machine.Name -Name "WindowsAgent.SqlServer" -Setting $currentSettings | Out-Null
+        Update-AzConnectedMachineExtension -ResourceGroupName $ResourceGroupName -MachineName $machine.Name -Name "WindowsAgent.SqlServer" -Setting $currentSettings -ErrorAction Stop | Out-Null
+        Assert-ArcSQLLicenseType -ResourceGroupName $ResourceGroupName -MachineName $machine.Name -LicenseType $LicenseType
         Write-Host "  Done`n" -ForegroundColor Green
         $successCount++
         
@@ -109,6 +125,8 @@ if ($skipCount -gt 0) {
 }
 if ($failCount -gt 0) {
     Write-Host "Failed: $failCount" -ForegroundColor Red
+    exit 1
 }
 
 Write-Host ""
+exit 0

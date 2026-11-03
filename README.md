@@ -1,202 +1,112 @@
 # Azure Arc Management
 
-Scripts and tools for managing Arc-enabled servers and SQL licensing.
+Simple, customer-operated PowerShell scripts to record Windows Server Software Assurance attestation and update SQL Server license settings, one server or a batch at a time.
 
-## Prerequisites
+These scripts work on **already Arc-enabled servers**. They do not install the Arc agent, purchase licenses, or verify licensing entitlement.
 
-Install required modules and connect to Azure:
+## Before you run
+
+- Use **PowerShell 7** (`pwsh`), not Windows PowerShell 5.1.
+- Download or clone the repository and keep `ArcManagement.Helpers.ps1` beside the six scripts.
+- Sign in with permission to read the selected machines and update their license profiles or SQL extensions.
+- Confirm the subscription and the licensing eligibility of every selected server with your licensing owner.
+- For Windows benefits, only select supported Windows Server machines with active Software Assurance or qualifying subscription coverage. SQL SA does not establish Windows Server SA eligibility. See the [benefit requirements and terms](https://learn.microsoft.com/azure/azure-arc/servers/windows-server-management-overview).
+- The SQL scripts target the `WindowsAgent.SqlServer` extension on Windows; Linux SQL extensions are not included.
+
+Run from the downloaded repository in PowerShell 7:
 
 ```powershell
-Install-Module Az.ConnectedMachine -Force -Scope CurrentUser
 Install-Module Az.Accounts -Force -Scope CurrentUser
 Install-Module Az.Resources -Force -Scope CurrentUser
+Install-Module Az.ConnectedMachine -Force -Scope CurrentUser
 Connect-AzAccount
 Set-AzContext -SubscriptionId "your-subscription-id"
 ```
 
-## SQL License Compliance Monitoring
+## Start small, then expand
 
-### Arc SQL License Compliance Workbook
+1. Preview with `-WhatIf`. This reads Azure to discover targets but performs no writes.
+2. Run against one approved server and check the saved setting in the Azure portal.
+3. Preview the resource group or subscription, review the displayed targets, then run the batch.
 
-Dashboard for monitoring SQL Server license compliance across Arc-enabled servers.
-
-**Features:**
-- Displays all Arc SQL instances with current license types
-- Filters by online/offline status
-- Color-coded compliance indicators
-- Configurable target license type
-- Excludes service instances (SSIS, SSRS, SSAS) - shows database engine only
-
-**Deployment Steps:**
-
-1. Navigate to Azure Portal → **Monitor** → **Workbooks** → **+ New**
-2. Click the **</>** (Advanced Editor) button
-3. Select **Gallery Template** tab
-4. Copy and paste the contents of `arc-sql-license-workbook.json`
-5. Click **Apply**, then **Done Editing**
-6. Select your subscription(s) from the dropdown
-7. Save the workbook (recommended name: "Arc SQL License Compliance")
-
-**Usage:**
-- **Target License Type**: Select the license type to enforce (Paid, PAYG, LicenseOnly)
-- **Show Offline Instances**: Toggle to include or exclude disconnected servers
-- **Summary tiles**: Quick overview of instance counts and compliance status
-- **Instance table**: Detailed view of each server's configuration and status
-
-**Compliance Indicators:**
-- ✓ Green = Compliant (using target license type)
-- ⚠ Yellow = Non-compliant (remediation needed)
-- Gray = Offline (server disconnected)
-
-**Remediation Options:**
-
-After identifying non-compliant instances:
-
-1. **Manual remediation**: Use the scripts below to update individual servers or resource groups
-2. **Automated remediation**: Deploy the automation runbook (files in `runbook/` folder) for on-demand fixes
-   - Runbook does not run automatically unless scheduled
-   - Execute on-demand when ready to remediate
-
----
-
-## Azure Benefits
-
-Enable Software Assurance attestation for Arc Windows servers.
-
-### Enable-AzureArcSABenefits-Single.ps1
-
-Enable benefits for a single server:
+Scripts show the subscription and ask for confirmation before changes. Bulk scripts ask once for the displayed batch. `-Confirm:$false` bypasses that prompt: only use it after reviewing and approving the targets.
 
 ```powershell
+# Preview one Windows Server attestation, then apply it.
+.\Enable-AzureArcSABenefits-Single.ps1 -ResourceGroupName "my-rg" -MachineName "server-01" -WhatIf
 .\Enable-AzureArcSABenefits-Single.ps1 -ResourceGroupName "my-rg" -MachineName "server-01"
-```
 
-**Parameters:**
-- `ResourceGroupName`: Resource group name
-- `MachineName`: Arc server name
-
-### Enable-AzureArcSABenefits-ResourceGroup.ps1
-
-Enable benefits for all servers in a resource group:
-
-```powershell
-.\Enable-AzureArcSABenefits-ResourceGroup.ps1 -ResourceGroupName "my-rg"
-```
-
-**Parameters:**
-- `ResourceGroupName`: Resource group name
-- `ExcludeMachines`: (Optional) Machines to exclude from operation
-
-```powershell
+# Preview a batch, then apply it to the approved resource group.
+.\Enable-AzureArcSABenefits-ResourceGroup.ps1 -ResourceGroupName "my-rg" -ExcludeMachines "dev-server","test-vm" -WhatIf
 .\Enable-AzureArcSABenefits-ResourceGroup.ps1 -ResourceGroupName "my-rg" -ExcludeMachines "dev-server","test-vm"
 ```
 
-### Enable-AzureArcSABenefits-All.ps1
+## Windows Server benefits attestation
 
-Enable benefits for all servers in the subscription:
+Confirming an attestation run declares that the selected Windows Server machines have the required SA/subscription coverage. **The script records your declaration; it does not validate entitlement.** Bulk scripts select Windows machines, not a licensing-approved inventory: use an approved scope and exclusions.
+
+| Script | Scope | Parameters |
+| --- | --- | --- |
+| `Enable-AzureArcSABenefits-Single.ps1` | One server | `ResourceGroupName`, `MachineName` |
+| `Enable-AzureArcSABenefits-ResourceGroup.ps1` | Windows machines in a resource group | `ResourceGroupName`, optional `ExcludeMachines` |
+| `Enable-AzureArcSABenefits-All.ps1` | Windows machines in the current subscription | Optional `ExcludeMachines` |
 
 ```powershell
-.\Enable-AzureArcSABenefits-All.ps1
+.\Enable-AzureArcSABenefits-All.ps1 -ExcludeMachines "dev-server","test-vm" -WhatIf
 ```
 
-**Parameters:**
-- `ExcludeMachines`: (Optional) Machines to exclude from operation
+The scripts verify the saved attestation flag. Benefit activation can take up to ten minutes; a saved flag is not proof that every benefit is active or that the server is properly licensed.
+
+## SQL Server license settings
+
+Choose the value that matches your actual entitlement:
+
+- `PAYG`: Pay-as-you-go through Azure. **Switching to PAYG can start Azure billing.**
+- `Paid`: SQL Server license with active Software Assurance or a qualifying SQL Server subscription.
+- `LicenseOnly`: License without SA, or a free Developer, Express, or Evaluation edition. See [SQL licensing guidance](https://learn.microsoft.com/sql/sql-server/azure-arc/manage-license-billing) for Server+CAL, SPLA, and other special cases.
+
+Settings apply at the machine's Windows SQL extension level, not to one individually selected SQL instance.
+
+| Script | Scope | Parameters |
+| --- | --- | --- |
+| `Update-ArcSQLLicenseType-Single.ps1` | One machine | `ResourceGroupName`, `MachineName`, `LicenseType` |
+| `Update-ArcSQLLicenseType-ResourceGroup.ps1` | Windows SQL extensions in a resource group | `ResourceGroupName`, `LicenseType` |
+| `Update-ArcSQLLicenseType-All.ps1` | Windows SQL extensions in the current subscription | `LicenseType` |
 
 ```powershell
-.\Enable-AzureArcSABenefits-All.ps1 -ExcludeMachines "dev-server","test-vm"
-```
+.\Update-ArcSQLLicenseType-Single.ps1 -ResourceGroupName "my-rg" -MachineName "sql-01" -LicenseType "Paid" -WhatIf
+.\Update-ArcSQLLicenseType-Single.ps1 -ResourceGroupName "my-rg" -MachineName "sql-01" -LicenseType "Paid"
 
-## SQL Licensing
-
-Update license type for Arc-enabled SQL servers.
-
-### License Types
-
-- `PAYG`: Pay-as-you-go billing through Azure
-- `Paid`: Software Assurance or SQL Server subscription
-- `LicenseOnly`: Bring your own license (Developer, Express, Evaluation, or Server/CAL without SA)
-
-### Update-ArcSQLLicenseType-Single.ps1
-
-Update license type for a single SQL server:
-
-```powershell
-.\Update-ArcSQLLicenseType-Single.ps1 -ResourceGroupName "my-rg" -MachineName "sql-server-01" -LicenseType "Paid"
-```
-
-**Parameters:**
-- `ResourceGroupName`: Resource group name
-- `MachineName`: Arc server name
-- `LicenseType`: PAYG, Paid, or LicenseOnly
-
-### Update-ArcSQLLicenseType-ResourceGroup.ps1
-
-Update license type for all SQL servers in a resource group:
-
-```powershell
+.\Update-ArcSQLLicenseType-ResourceGroup.ps1 -ResourceGroupName "my-rg" -LicenseType "Paid" -WhatIf
 .\Update-ArcSQLLicenseType-ResourceGroup.ps1 -ResourceGroupName "my-rg" -LicenseType "Paid"
+
+.\Update-ArcSQLLicenseType-All.ps1 -LicenseType "Paid" -WhatIf
 ```
 
-**Parameters:**
-- `ResourceGroupName`: Resource group name
-- `LicenseType`: PAYG, Paid, or LicenseOnly
+Existing public SQL extension settings are retained. If `SqlManagement` is absent, the scripts enable it as in the documented SQL extension configuration.
 
-### Update-ArcSQLLicenseType-All.ps1
+## Results and failures
 
-Update license type for all SQL servers in the subscription:
+- Already matching settings are skipped without writes.
+- Changes are read back before being reported as successful, with up to three checks.
+- Exit code `0` means the requested saved settings were verified/already present, or the run was previewed/cancelled. Exit code `1` means a failure. A preview is not verification of current settings.
+- Bulk scripts continue after an individual update failure and print the affected machine and error.
+- Discovery/access errors stop the run rather than silently omitting machines.
+- Batches are not transactional: earlier successful changes remain if a later operation fails. Check the saved settings before retrying; there is no automatic rollback.
+
+## Additional tools
+
+The policy, workbook, and KQL files remain available for reference but are **not part of the recommended customer bulk-script workflow**:
+
+- `arc-windows-sa-remediation-policy.json`: automatic attestation policy. Requires separate validation of child-resource matching, identity permissions, and licensing-approved scope before assignment.
+- `arc-sql-license-workbook.json`: configuration dashboard. Its name-based grouping can merge servers/instances; do not use its green indicators as licensing evidence.
+- `arc-licensing-graph-query.kql`: resource inventory query, not an entitlement audit.
+- `arc-windows-esu-cost-estimate.kql`: legacy illustrative estimate, not a current quote. It does not distinguish physical/virtual licensing correctly. Windows Server 2012/2012 R2 Arc ESU coverage ended October 2026. Use [current ESU guidance](https://learn.microsoft.com/azure/azure-arc/servers/license-extended-security-updates) for planning.
+
+## Offline tests
 
 ```powershell
-.\Update-ArcSQLLicenseType-All.ps1 -LicenseType "Paid"
+pwsh -NoProfile -File .\tests\Test-ArcScripts.ps1
 ```
 
-**Parameters:**
-- `LicenseType`: PAYG, Paid, or LicenseOnly
-
-### Enable-AzureArcSQLSABenefits.ps1
-
-Alternative script for single server license updates:
-
-```powershell
-.\Enable-AzureArcSQLSABenefits.ps1 -ResourceGroupName "my-rg" -MachineName "sql-server-01" -LicenseType "Paid"
-```
-
-**Parameters:**
-- `ResourceGroupName`: Resource group name
-- `MachineName`: Arc server name
-- `LicenseType`: PAYG, Paid, or LicenseOnly
-
-## Policy
-
-### arc-windows-sa-remediation-policy.json
-
-Azure Policy definition for automatically enabling Software Assurance benefits on Arc Windows servers.
-
-## Queries
-
-### arc-licensing-graph-query.kql
-
-Resource Graph query for viewing licensing status across Arc resources.
-
-### arc-windows-esu-cost-estimate.kql
-
-Resource Graph query that returns a per-server ESU cost estimate for Arc-enabled Windows servers.
-
-Identifies servers running ESU-eligible OS versions (Windows Server 2012, 2012 R2, and 2016), applies the 8-core minimum licensing rule, and calculates monthly and yearly ESU costs based on current Microsoft ESU pricing.
-
-**ESU Pricing (per core/month):**
-- Windows Server 2012 / 2012 R2 Standard: $4.74
-- Windows Server 2012 / 2012 R2 Datacenter: $27.50
-- Windows Server 2016 Standard: $4.74 *(ESU begins January 2027)*
-- Windows Server 2016 Datacenter: $27.50 *(ESU begins January 2027)*
-
-**Notes:**
-- Azure VMs are excluded — ESUs are provided at no cost for Azure-hosted workloads
-- Pricing is hardcoded based on current Microsoft ESU rates — update if rates change
-- The 8-core minimum per server is applied per Microsoft licensing requirements
-- Results are sorted by yearly ESU cost descending
-## Notes
-
-- Scripts skip servers already configured with the target setting
-- Existing configurations are preserved during updates
-- Each script provides a summary of successful, skipped, and failed operations
-- The workbook provides monitoring only - remediation requires manual action or runbook deployment
+Tests use mocked Azure commands and never connect to Azure. They do not replace a single-server validation in your environment.
